@@ -9,15 +9,14 @@ screenshot, the HTML and the links of the B12 pages so selectors.json can be fil
 
 import json
 import re
+import shutil
 from pathlib import Path
 from urllib.parse import urljoin
 
 from playwright.sync_api import BrowserContext, Page, TimeoutError as PWTimeout, sync_playwright
 
-from . import store
+from . import credentials, store
 from .config import (
-    B12_EMAIL,
-    B12_PASSWORD,
     B12_URL,
     BROWSER_PROFILE,
     DISCOVER_DIR,
@@ -26,6 +25,11 @@ from .config import (
 )
 
 MS_LOGIN_HOST = "login.microsoftonline.com"
+MS_ERROR_SELECTOR = "#usernameError, #passwordError, #errorText, .alert-error"
+
+
+class LoginError(Exception):
+    """The B12 / Microsoft sign-in did not succeed."""
 
 
 def _open(headless: bool):
@@ -35,23 +39,27 @@ def _open(headless: bool):
     return pw, ctx, page
 
 
-def _microsoft_sign_in(page: Page) -> None:
+def _microsoft_sign_in(page: Page, email: str, password: str) -> None:
     """Fill the Microsoft sign-in form. Any step that is not shown is skipped."""
     try:
-        page.fill("input[type=email]", B12_EMAIL, timeout=10_000)
+        page.fill("input[type=email]", email, timeout=10_000)
         page.click("input[type=submit]")
     except PWTimeout:
         pass
     try:
-        page.fill("input[type=password]", B12_PASSWORD, timeout=15_000)
+        page.fill("input[type=password]", password, timeout=15_000)
         page.click("input[type=submit]")
     except PWTimeout:
         pass
     try:
-        # "Stay signed in?" -> Yes
-        page.click("#idSIButton9", timeout=10_000)
+        # "Stay signed in?" -> Yes, or Microsoft's error under the email or password box
+        page.wait_for_selector(f"#idSIButton9, {MS_ERROR_SELECTOR}", timeout=10_000)
     except PWTimeout:
-        pass
+        return
+    error = page.query_selector(MS_ERROR_SELECTOR)
+    if error and error.is_visible():
+        raise LoginError(error.inner_text().strip() or "Microsoft rejected the sign-in")
+    page.click("#idSIButton9")
 
 
 def ensure_signed_in(page: Page, interactive: bool = False) -> None:
@@ -65,11 +73,43 @@ def ensure_signed_in(page: Page, interactive: bool = False) -> None:
         except PWTimeout:
             return  # already signed in
     if MS_LOGIN_HOST in page.url:
-        _microsoft_sign_in(page)
+        creds = credentials.get()
+        if not creds and not interactive:
+            raise LoginError("No student sign-in saved")
+        if creds:
+            _microsoft_sign_in(page, *creds)
     if interactive:
         print("If the browser still shows a sign-in step, finish it by hand. Waiting up to 3 minutes...")
-    page.wait_for_url(lambda url: MS_LOGIN_HOST not in url, timeout=180_000 if interactive else 60_000)
+    try:
+        page.wait_for_url(lambda url: MS_LOGIN_HOST not in url, timeout=180_000 if interactive else 60_000)
+    except PWTimeout:
+        raise LoginError("Sign-in did not finish") from None
     page.wait_for_load_state("networkidle")
+
+
+def sign_in_with(email: str, password: str) -> None:
+    """Sign in from scratch with the given account and save it if it works. Raises LoginError."""
+    shutil.rmtree(BROWSER_PROFILE, ignore_errors=True)
+    pw, ctx, page = _open(headless=True)
+    try:
+        page.goto(B12_URL, wait_until="networkidle")
+        if MS_LOGIN_HOST not in page.url:
+            page.get_by_text(re.compile("microsoft|office 365|sign in", re.I)).first.click(timeout=15_000)
+            page.wait_for_load_state("networkidle")
+        _microsoft_sign_in(page, email, password)
+        try:
+            page.wait_for_url(lambda url: MS_LOGIN_HOST not in url, timeout=60_000)
+        except PWTimeout:
+            raise LoginError("Sign-in did not finish") from None
+    finally:
+        ctx.close()
+        pw.stop()
+    credentials.save(email, password)
+
+
+def sign_out() -> None:
+    credentials.clear()
+    shutil.rmtree(BROWSER_PROFILE, ignore_errors=True)
 
 
 def login() -> None:

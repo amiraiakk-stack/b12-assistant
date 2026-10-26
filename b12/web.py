@@ -8,11 +8,11 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from . import assistant, store
+from . import assistant, credentials, scraper, store
 from .config import ALLOWED_WHATSAPP_NUMBER, MORNING_REMINDER_HOUR, SYNC_EVERY_HOURS, TZ, WHATSAPP_TOKEN
 
 PAGE = Path(__file__).with_name("static") / "index.html"
@@ -29,9 +29,43 @@ class Question(BaseModel):
     question: str
 
 
+class Login(BaseModel):
+    email: str
+    password: str
+
+
+def _first_sync() -> None:
+    try:
+        print("first sync:", assistant.sync_and_process())
+    except Exception as e:
+        print("first sync failed:", e)
+
+
 @app.get("/", response_class=HTMLResponse)
 def index():
     return PAGE.read_text(encoding="utf-8")
+
+
+@app.get("/api/status")
+def status():
+    creds = credentials.get()
+    return {"signed_in": bool(creds), "email": creds[0] if creds else None}
+
+
+@app.post("/api/login")
+def login(body: Login, background: BackgroundTasks):
+    try:
+        scraper.sign_in_with(body.email.strip(), body.password)
+    except scraper.LoginError as e:
+        raise HTTPException(status_code=401, detail=str(e))
+    background.add_task(_first_sync)
+    return {"signed_in": True, "email": body.email.strip()}
+
+
+@app.post("/api/logout")
+def logout():
+    scraper.sign_out()
+    return {"signed_in": False}
 
 
 @app.post("/api/ask")
@@ -41,7 +75,10 @@ def ask(q: Question):
 
 @app.post("/api/sync")
 def sync():
-    return {"result": assistant.sync_and_process()}
+    try:
+        return {"result": assistant.sync_and_process()}
+    except scraper.LoginError as e:
+        raise HTTPException(status_code=401, detail=str(e))
 
 
 @app.get("/api/tasks")
@@ -56,7 +93,7 @@ def _scheduler() -> None:
     last_brief_day = None
     while True:
         now = datetime.now(TZ)
-        if time.time() - last_sync >= SYNC_EVERY_HOURS * 3600:
+        if credentials.get() and time.time() - last_sync >= SYNC_EVERY_HOURS * 3600:
             try:
                 print("sync:", assistant.sync_and_process())
             except Exception as e:  # keep the server running if B12 is down

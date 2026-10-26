@@ -20,18 +20,45 @@
   button.primary { background:var(--accent); color:#fff; border-color:var(--accent); border-radius:8px; }
   button:disabled { opacity:.6; cursor:wait; }
   form { display:flex; gap:8px; }
-  input { flex:1; font:inherit; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--text); }
+  input { flex:1; min-width:0; font:inherit; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--text); }
   #answer { white-space:pre-wrap; line-height:1.7; min-height:2em; }
   table { width:100%; border-collapse:collapse; font-size:.95rem; }
   th, td { text-align:right; padding:6px 4px; border-bottom:1px solid var(--line); vertical-align:top; }
   th { color:var(--muted); font-weight:600; }
   .row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
   .muted { color:var(--muted); }
+  .hidden { display:none; }
+  .login { max-width:420px; margin:40px auto; }
+  .login form { display:block; }
+  .login label { display:block; margin:12px 0 4px; font-weight:600; }
+  .login input { width:100%; }
+  .login .primary { width:100%; margin-top:16px; padding:10px; }
+  .error { color:#d92d20; }
+  .who { font-size:.9rem; }
+  .who button { padding:4px 10px; font-size:.85rem; }
 </style>
 </head>
 <body>
 <main>
-  <h1>مساعد المدرسة 📚</h1>
+  <section id="loginView" class="card login hidden">
+    <h1>مساعد المدرسة 📚</h1>
+    <p class="sub">فوتي بحساب الطالب على B12 (حساب Microsoft تبع المدرسة).</p>
+    <form id="loginForm">
+      <label for="email">إيميل الطالب</label>
+      <input id="email" type="email" dir="ltr" placeholder="name@std.school.com" required autocomplete="username">
+      <label for="password">كلمة السر</label>
+      <input id="password" type="password" dir="ltr" required autocomplete="current-password">
+      <button class="primary" type="submit">تسجيل الدخول</button>
+    </form>
+    <p id="loginStatus" class="muted"></p>
+    <p class="muted" style="font-size:.85rem">كلمة السر بتنحفظ بمخزن كلمات السر بجهازك (Windows Credential Manager)، وما بتطلع لبرا الجهاز إلا لـ Microsoft.</p>
+  </section>
+
+  <div id="appView" class="hidden">
+  <div class="row">
+    <h1>مساعد المدرسة 📚</h1>
+    <span class="who muted"><span id="who"></span> <button id="logout">تسجيل خروج</button></span>
+  </div>
   <p class="sub">بيقرأ رسائل B12 (Weekly plan، Newsletter، التذكيرات) وبيجاوبك شو في واجبات وأغراض.</p>
 
   <section class="card">
@@ -56,6 +83,7 @@
     <p id="syncStatus" class="muted"></p>
     <div id="tasks" class="muted">عم حمّل...</div>
   </section>
+  </div>
 </main>
 <script>
 const KIND = {homework:"واجب", bring:"إحضار", exam:"امتحان", quiz:"اختبار قصير", project:"مشروع", event:"نشاط", uniform:"لباس", other:"غير"};
@@ -91,6 +119,40 @@ async function loadTasks() {
   el.classList.remove("muted");
 }
 
+async function showView() {
+  const {signed_in, email} = await (await fetch("/api/status")).json();
+  document.getElementById("loginView").classList.toggle("hidden", signed_in);
+  document.getElementById("appView").classList.toggle("hidden", !signed_in);
+  if (signed_in) { document.getElementById("who").textContent = email; loadTasks(); }
+}
+
+document.getElementById("loginForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const status = document.getElementById("loginStatus");
+  const button = e.target.querySelector("button");
+  button.disabled = true; status.className = "muted";
+  status.textContent = "عم فوت على B12، ممكن ياخد دقيقة...";
+  try {
+    const r = await fetch("/api/login", {method:"POST", headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({email:document.getElementById("email").value, password:document.getElementById("password").value})});
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      status.className = "error";
+      status.textContent = "ما زبط الدخول: " + (data.detail || r.status) + ". تأكدي من الإيميل وكلمة السر.";
+      return;
+    }
+    document.getElementById("password").value = "";
+    status.textContent = "";
+    document.getElementById("syncStatus").textContent = "تم الدخول. عم نقرأ الرسائل لأول مرة، بعد شوي اضغطي «تحديث».";
+    showView();
+  } finally { button.disabled = false; }
+});
+
+document.getElementById("logout").addEventListener("click", async () => {
+  await fetch("/api/logout", {method:"POST"});
+  showView();
+});
+
 document.querySelectorAll("[data-q]").forEach(b => b.addEventListener("click", () => ask(b.dataset.q)));
 document.getElementById("ask").addEventListener("submit", e => {
   e.preventDefault();
@@ -103,11 +165,12 @@ document.getElementById("sync").addEventListener("click", async e => {
   try {
     const r = await fetch("/api/sync", {method:"POST"});
     const data = await r.json();
+    if (r.status === 401) { showView(); return; }
     status.textContent = r.ok ? "تم: " + data.result : "ما زبط التحديث، شوفي نافذة الأوامر.";
     loadTasks();
   } finally { e.target.disabled = false; }
 });
-loadTasks();
+showView();
 </script>
 </body>
 </html>

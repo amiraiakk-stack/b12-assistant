@@ -22,16 +22,23 @@ copy .env.example .env
 notepad .env
 ```
 
-بملف `.env` عبي `ANTHROPIC_API_KEY` (من console.anthropic.com) وإيميل وكلمة سر حساب المدرسة. ملف `.env` ما بينرفع على GitHub.
+بملف `.env` عبي `ANTHROPIC_API_KEY` (من console.anthropic.com). ملف `.env` ما بينرفع على GitHub.
 
 ## الاستعمال
 
 ```powershell
-python -m b12 login      # بيفتح متصفح وبيعمل تسجيل الدخول مرة وحدة، والجلسة بتنحفظ
+python -m b12 serve
+```
+
+افتحي http://localhost:8000. أول مرة بتطلب الصفحة إيميل الطالب وكلمة السر، وبتعمل تسجيل الدخول على B12 بالخلفية. كلمة السر بتنحفظ بمخزن كلمات السر بالجهاز (Windows Credential Manager)، مش بملف. ومن زر «تسجيل خروج» بتنمسح.
+
+أوامر إضافية للضبط والتجربة:
+
+```powershell
+python -m b12 login      # بيفتح متصفح ظاهر، مفيد إذا B12 طلب خطوة إضافية بالدخول
 python -m b12 discover   # بيحفظ صور وصفحات B12 في data\discover لنضبط selectors.json
 python -m b12 sync       # بيسحب الرسائل الجديدة وبيستخرج المهام
 python -m b12 ask "شو عنا بكرا؟"
-python -m b12 serve      # بيشغل الصفحة على http://localhost:8000 مع تحديث تلقائي كل 3 ساعات
 ```
 
 ## ضبط صفحات B12 (`selectors.json`)
