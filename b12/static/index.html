@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>مساعد المدرسة</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --text:#1d2330; --muted:#667085; --accent:#2f6fde; --line:#e4e7ec; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14171c; --card:#1d2129; --text:#e8eaed; --muted:#9aa3b2; --accent:#6b9bff; --line:#2c323d; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:system-ui, "Segoe UI", Tahoma, sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:16px; }
+  h1 { font-size:1.4rem; margin:8px 0 4px; }
+  p.sub { color:var(--muted); margin:0 0 16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; }
+  .quick { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
+  button { font:inherit; border:1px solid var(--line); background:var(--card); color:var(--text); border-radius:999px; padding:8px 14px; cursor:pointer; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); border-radius:8px; }
+  button:disabled { opacity:.6; cursor:wait; }
+  form { display:flex; gap:8px; }
+  input { flex:1; font:inherit; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:var(--bg); color:var(--text); }
+  #answer { white-space:pre-wrap; line-height:1.7; min-height:2em; }
+  table { width:100%; border-collapse:collapse; font-size:.95rem; }
+  th, td { text-align:right; padding:6px 4px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; }
+  .row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .muted { color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>مساعد المدرسة 📚</h1>
+  <p class="sub">بيقرأ رسائل B12 (Weekly plan، Newsletter، التذكيرات) وبيجاوبك شو في واجبات وأغراض.</p>
+
+  <section class="card">
+    <div class="quick">
+      <button data-q="شو عنا بكرا؟">شو عنا بكرا؟</button>
+      <button data-q="شو عنا اليوم؟">شو عنا اليوم؟</button>
+      <button data-q="شو في واجبات هالأسبوع؟">هالأسبوع</button>
+      <button data-q="في شي لازم ينجاب معه للمدرسة الأيام الجاية؟">أغراض لازم تنجاب</button>
+    </div>
+    <form id="ask">
+      <input id="q" placeholder="اسألي أي سؤال، مثلاً: في امتحان قريب؟" autocomplete="off">
+      <button class="primary" type="submit">اسألي</button>
+    </form>
+    <div id="answer" class="muted" style="margin-top:12px"></div>
+  </section>
+
+  <section class="card">
+    <div class="row">
+      <h2 style="font-size:1.1rem;margin:0">الأيام السبعة الجاية</h2>
+      <button id="sync">تحديث من B12</button>
+    </div>
+    <p id="syncStatus" class="muted"></p>
+    <div id="tasks" class="muted">عم حمّل...</div>
+  </section>
+</main>
+<script>
+const KIND = {homework:"واجب", bring:"إحضار", exam:"امتحان", quiz:"اختبار قصير", project:"مشروع", event:"نشاط", uniform:"لباس", other:"غير"};
+const answerEl = document.getElementById("answer");
+
+async function ask(question) {
+  answerEl.textContent = "عم فكر...";
+  document.querySelectorAll("button").forEach(b => b.disabled = true);
+  try {
+    const r = await fetch("/api/ask", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({question})});
+    const data = await r.json();
+    answerEl.textContent = data.answer || "ما في جواب.";
+    answerEl.classList.remove("muted");
+  } catch (e) {
+    answerEl.textContent = "صار خطأ: " + e;
+  } finally {
+    document.querySelectorAll("button").forEach(b => b.disabled = false);
+  }
+}
+
+function esc(s) { const d = document.createElement("div"); d.textContent = s ?? ""; return d.innerHTML; }
+
+async function loadTasks() {
+  const r = await fetch("/api/tasks?days=7");
+  const {tasks} = await r.json();
+  const el = document.getElementById("tasks");
+  if (!tasks.length) { el.textContent = "ما في شي مسجل للأيام الجاية. اضغطي «تحديث من B12»."; return; }
+  const fmt = new Intl.DateTimeFormat("ar", {weekday:"long", day:"numeric", month:"numeric"});
+  el.innerHTML = "<table><tr><th>اليوم</th><th>المادة</th><th>شو المطلوب</th><th>وين</th></tr>" +
+    tasks.map(t => `<tr><td>${esc(fmt.format(new Date(t.due_date + "T12:00")))}</td><td>${esc(t.subject || "-")}</td>` +
+      `<td><b>${esc(KIND[t.kind] || t.kind)}:</b> ${esc(t.title)}${t.details ? "<br><span class='muted'>" + esc(t.details) + "</span>" : ""}</td>` +
+      `<td>${esc(t.platform || "")}</td></tr>`).join("") + "</table>";
+  el.classList.remove("muted");
+}
+
+document.querySelectorAll("[data-q]").forEach(b => b.addEventListener("click", () => ask(b.dataset.q)));
+document.getElementById("ask").addEventListener("submit", e => {
+  e.preventDefault();
+  const q = document.getElementById("q").value.trim();
+  if (q) ask(q);
+});
+document.getElementById("sync").addEventListener("click", async e => {
+  const status = document.getElementById("syncStatus");
+  e.target.disabled = true; status.textContent = "عم يقرأ من B12، ممكن ياخد دقيقة...";
+  try {
+    const r = await fetch("/api/sync", {method:"POST"});
+    const data = await r.json();
+    status.textContent = r.ok ? "تم: " + data.result : "ما زبط التحديث، شوفي نافذة الأوامر.";
+    loadTasks();
+  } finally { e.target.disabled = false; }
+});
+loadTasks();
+</script>
+</body>
+</html>

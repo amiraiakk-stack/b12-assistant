@@ -1,0 +1,6 @@
+{
+  "_comment": "Each section is a B12 page to read. Without item_selector the whole page text is read as one message. Fill in real URLs and CSS selectors after running `python -m b12 discover`.",
+  "sections": [
+    {"name": "b12-home", "url": "/", "title": "B12 home page"}
+  ]
+}
