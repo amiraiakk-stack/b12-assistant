@@ -22,15 +22,31 @@ copy .env.example .env
 notepad .env
 ```
 
+## التنصيب على WSL أو Linux
+
+```bash
+cd /mnt/c/path/to/b12-assistant
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+playwright install --with-deps chromium
+cp .env.example .env
+nano .env
+```
+
+على WSL ما في مخزن كلمات سر، فإيميل وكلمة سر الطالب بينحفظوا بملف `data/credentials.json`، وما حدا بيقدر يقرأه غير مستخدمك.
+
 بملف `.env` عبي `ANTHROPIC_API_KEY` (من console.anthropic.com). ملف `.env` ما بينرفع على GitHub.
 
 ## الاستعمال
+
+شغّلي الأوامر من مجلد المشروع، مش من جوا `b12`:
 
 ```powershell
 python -m b12 serve
 ```
 
-افتحي http://localhost:8000. أول مرة بتطلب الصفحة إيميل الطالب وكلمة السر، وبتعمل تسجيل الدخول على B12 بالخلفية. كلمة السر بتنحفظ بمخزن كلمات السر بالجهاز (Windows Credential Manager)، مش بملف. ومن زر «تسجيل خروج» بتنمسح.
+افتحي http://localhost:8000. أول مرة بتطلب الصفحة إيميل الطالب وكلمة السر، وبتعمل تسجيل الدخول على B12 بالخلفية. كلمة السر بتنحفظ بمخزن كلمات السر بالجهاز (Windows Credential Manager)، وعلى WSL بملف محمي. ومن زر «تسجيل خروج» بتنمسح.
 
 أوامر إضافية للضبط والتجربة:
 
