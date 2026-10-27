@@ -38,6 +38,17 @@ nano .env
 
 بملف `.env` عبي `ANTHROPIC_API_KEY` (من console.anthropic.com). ملف `.env` ما بينرفع على GitHub.
 
+## نموذج مجاني على جهازك (Ollama)
+
+بدل مفتاح Claude المدفوع، ممكن تشغلي نموذج مجاني على جهازك. بيانات الرسائل ما بتطلع من الجهاز، بس الجهاز لازم يكون فيه 8 جيجا رام عالأقل، والنموذج أبطأ وأضعف بالعربي وبقراءة الـ PDF من Claude.
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh   # على WSL/Linux. على Windows نزّليه من ollama.com
+ollama pull qwen2.5:7b                           # تقريباً 5 جيجا
+```
+
+وبعدين بملف `.env` حطي `LLM_PROVIDER=ollama`، وما بتحتاجي `ANTHROPIC_API_KEY`. ولترجعي على Claude، رجعيها `LLM_PROVIDER=claude`.
+
 ## الاستعمال
 
 شغّلي الأوامر من مجلد المشروع، مش من جوا `b12`:
