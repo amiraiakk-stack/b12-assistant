@@ -1,17 +1,27 @@
-"""Claude calls: turn B12 messages into dated tasks, and answer the parent's questions."""
+"""LLM calls: turn B12 messages into dated tasks, and answer the parent's questions.
+
+LLM_PROVIDER in .env picks the model: "claude" (Claude API, paid) or "ollama" (a free model
+running on this computer through Ollama).
+"""
 
 import base64
+import functools
 import mimetypes
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Literal, Optional
 
 import anthropic
+import httpx
 from pydantic import BaseModel, Field
+from pypdf import PdfReader
 
-from .config import MODEL, WEEKEND_DAYS
+from .config import LLM_PROVIDER, MODEL, OLLAMA_MODEL, OLLAMA_URL, WEEKEND_DAYS
 
-client = anthropic.Anthropic()
+
+@functools.cache
+def _claude() -> anthropic.Anthropic:
+    return anthropic.Anthropic()
 
 # Server-side fallback: if a request is declined, the API re-runs it on a fallback model.
 FALLBACK_KWARGS = {"betas": ["server-side-fallback-2026-07-01"], "fallbacks": "default"}
@@ -55,23 +65,49 @@ def _attachment_block(path: str):
     return None
 
 
+def _message_text(msg, today: date) -> str:
+    return (
+        f"Today is {today.isoformat()} ({today.strftime('%A')}).\n"
+        f"Source: {msg['source']}\nSent: {msg['sent_at'] or 'unknown'}\n"
+        f"Title: {msg['title'] or ''}\n\n{msg['body'] or ''}"
+    )
+
+
+def _ollama_chat(system: str, text: str, schema: dict | None = None) -> str:
+    body = {
+        "model": OLLAMA_MODEL,
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": text}],
+        "stream": False,
+        "options": {"temperature": 0},
+    }
+    if schema:
+        body["format"] = schema
+    response = httpx.post(f"{OLLAMA_URL}/api/chat", json=body, timeout=600)
+    response.raise_for_status()
+    return response.json()["message"]["content"]
+
+
+def _pdf_text(path: str) -> str:
+    return "\n".join(page.extract_text() or "" for page in PdfReader(path).pages)
+
+
 def extract_tasks(msg, today: date) -> list[Task]:
+    if LLM_PROVIDER == "ollama":
+        text = _message_text(msg, today)
+        path = msg["attachment_path"]
+        if path and path.lower().endswith(".pdf"):
+            # Local models can't read PDFs directly, so pass the PDF's text.
+            text += f"\n\nAttached file text:\n{_pdf_text(path)}"
+        raw = _ollama_chat(EXTRACT_SYSTEM, text, Extraction.model_json_schema())
+        return Extraction.model_validate_json(raw).tasks
+
     content = []
     if msg["attachment_path"]:
         block = _attachment_block(msg["attachment_path"])
         if block:
             content.append(block)
-    content.append(
-        {
-            "type": "text",
-            "text": (
-                f"Today is {today.isoformat()} ({today.strftime('%A')}).\n"
-                f"Source: {msg['source']}\nSent: {msg['sent_at'] or 'unknown'}\n"
-                f"Title: {msg['title'] or ''}\n\n{msg['body'] or ''}"
-            ),
-        }
-    )
-    response = client.beta.messages.parse(
+    content.append({"type": "text", "text": _message_text(msg, today)})
+    response = _claude().beta.messages.parse(
         model=MODEL,
         max_tokens=16000,
         system=EXTRACT_SYSTEM,
@@ -124,7 +160,9 @@ def answer(question: str, today: date, dated_rows, undated_rows, focus_days: lis
         f"Recent reminders with no date:\n{_format_tasks(undated_rows)}\n\n"
         f"Parent's question: {question}"
     )
-    response = client.beta.messages.create(
+    if LLM_PROVIDER == "ollama":
+        return _ollama_chat(ANSWER_SYSTEM, text).strip()
+    response = _claude().beta.messages.create(
         model=MODEL,
         max_tokens=4000,
         system=ANSWER_SYSTEM,

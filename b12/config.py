@@ -15,7 +15,10 @@ DOWNLOADS_DIR = DATA_DIR / "downloads"
 DISCOVER_DIR = DATA_DIR / "discover"
 SELECTORS_PATH = ROOT / "selectors.json"
 
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "claude").lower()
 MODEL = "claude-opus-5-5"
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
 
 B12_URL = os.getenv("B12_URL", "https://student.b12app.com/")
 B12_EMAIL = os.getenv("B12_EMAIL", "")
